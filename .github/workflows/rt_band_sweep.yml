@@ -1,0 +1,32 @@
+name: rt-valued-band-sweep
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "experiments/**"
+      - ".github/workflows/rt_band_sweep.yml"
+  workflow_dispatch:
+
+jobs:
+  bands:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        B: [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 20]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install numpy scipy pandas scikit-learn
+      - name: Run B=${{ matrix.B }}
+        run: python experiments/rt_band_sweep.py --B ${{ matrix.B }} --out results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: band-${{ matrix.B }}
+          path: results/*.csv
+          retention-days: 30
