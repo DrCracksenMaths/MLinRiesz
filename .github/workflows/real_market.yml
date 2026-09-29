@@ -1,0 +1,30 @@
+name: real-market-comparison
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "experiments/real_market_volatility.py"
+      - ".github/workflows/real_market.yml"
+
+jobs:
+  real-market:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install numpy scipy pandas scikit-learn yfinance torch
+      - name: Run real-data comparison
+        run: python experiments/real_market_volatility.py --seeds 20 --out real_results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-market-results
+          path: real_results/*
+          if-no-files-found: warn
+          retention-days: 30
