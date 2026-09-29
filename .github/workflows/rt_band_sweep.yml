@@ -21,12 +21,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
-      - run: pip install numpy scipy pandas scikit-learn
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install numpy scipy pandas scikit-learn
       - name: Run B=${{ matrix.B }}
         run: python experiments/rt_band_sweep.py --B ${{ matrix.B }} --out results
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: band-${{ matrix.B }}
           path: results/*.csv
+          if-no-files-found: warn
           retention-days: 30
