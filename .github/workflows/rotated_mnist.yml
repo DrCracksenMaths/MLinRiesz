@@ -1,0 +1,30 @@
+name: rotated-mnist-comparison
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "experiments/rotated_mnist.py"
+      - ".github/workflows/rotated_mnist.yml"
+
+jobs:
+  rotated-mnist:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install numpy pandas torch torchvision
+      - name: Run experiment
+        run: python experiments/rotated_mnist.py --seeds 5 --out image_results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rotated-mnist-results
+          path: image_results/*
+          if-no-files-found: warn
+          retention-days: 30
