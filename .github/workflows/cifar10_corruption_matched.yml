@@ -1,0 +1,86 @@
+name: cifar10-corruption-matched
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "experiments/cifar10_corruption_matched.py"
+      - ".github/workflows/cifar10_corruption_matched.yml"
+
+jobs:
+  seed:
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy pandas scipy torch torchvision
+      - name: Run CIFAR-10 corruption experiment
+        run: python experiments/cifar10_corruption_matched.py --seed ${{ matrix.seed }} --out cifar_results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cifar-seed-${{ matrix.seed }}
+          path: cifar_results/*
+          if-no-files-found: warn
+          retention-days: 30
+
+  aggregate:
+    needs: seed
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cifar-seed-*
+          path: all_results
+          merge-multiple: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pandas scipy
+      - name: Aggregate
+        run: |
+          python - <<'PY'
+          import glob, pandas as pd
+          from scipy import stats
+          fs=glob.glob("all_results/seed_*.csv")
+          d=pd.concat([pd.read_csv(f) for f in fs],ignore_index=True)
+          d.to_csv("all_results/all_20_seeds.csv",index=False)
+          s=(d.groupby(["model","B","split"]).agg(
+              acc_mean=("accuracy","mean"),acc_sd=("accuracy","std"),
+              nll_mean=("nll","mean"),nll_sd=("nll","std"),
+              params=("params","first"),n=("seed","count")).reset_index())
+          s.to_csv("all_results/summary.csv",index=False)
+          comps=[]
+          for split in ["seen","unseen_severity"]:
+              q=d[d.split==split].pivot(index="seed",columns="model",values="accuracy")
+              for other in ["RT-hard","Soft-MoE-matched"]:
+                  diff=q[other]-q["CNN-matched"]; t,p=stats.ttest_rel(q[other],q["CNN-matched"])
+                  comps.append({"split":split,"comparison":f"{other} - CNN-matched",
+                      "mean_accuracy_difference":diff.mean(),"sd_difference":diff.std(ddof=1),
+                      "wins":int((diff>0).sum()),"ties":int((diff==0).sum()),"losses":int((diff<0).sum()),
+                      "paired_t":float(t),"paired_p":float(p)})
+          pd.DataFrame(comps).to_csv("all_results/paired_comparisons.csv",index=False)
+          bc=glob.glob("all_results/bycorr_*.csv")
+          if bc:
+              b=pd.concat([pd.read_csv(f) for f in bc],ignore_index=True)
+              b.groupby(["model","split","corruption"]).accuracy.agg(["mean","std","count"]).reset_index().to_csv("all_results/by_corruption_summary.csv",index=False)
+          print(s.to_string(index=False)); print(pd.DataFrame(comps).to_string(index=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cifar10-corruption-20seeds-summary
+          path: |
+            all_results/all_20_seeds.csv
+            all_results/summary.csv
+            all_results/paired_comparisons.csv
+            all_results/by_corruption_summary.csv
+          retention-days: 30
