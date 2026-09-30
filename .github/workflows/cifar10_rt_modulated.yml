@@ -1,0 +1,78 @@
+name: cifar10-rt-modulation-screen
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "experiments/cifar10_rt_modulated.py"
+      - ".github/workflows/cifar10_rt_modulated.yml"
+
+jobs:
+  experiment:
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [0,1,2,3,4]
+        model: [cnn,dense_film,rt_film,rt_adapter,softmoe]
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy pandas scipy torch torchvision
+      - run: python experiments/cifar10_rt_modulated.py --seed ${{ matrix.seed }} --model ${{ matrix.model }} --out results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screen-${{ matrix.model }}-${{ matrix.seed }}
+          path: results/*
+          if-no-files-found: warn
+          retention-days: 30
+
+  aggregate:
+    needs: experiment
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: screen-*
+          path: all_results
+          merge-multiple: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pandas scipy
+      - name: Aggregate screen
+        run: |
+          python - <<'PY'
+          import glob, pandas as pd
+          from scipy import stats
+          fs=[f for f in glob.glob("all_results/*.csv") if "/bycorr_" not in f]
+          d=pd.concat([pd.read_csv(f) for f in fs],ignore_index=True)
+          d.to_csv("all_results/all_screen.csv",index=False)
+          s=d.groupby(["model","split"]).agg(acc_mean=("accuracy","mean"),acc_sd=("accuracy","std"),nll_mean=("nll","mean"),params=("params","first"),width=("width","first"),n=("seed","count")).reset_index()
+          s.to_csv("all_results/summary.csv",index=False)
+          q=d[d.split=="unseen_severity"].pivot(index="seed",columns="model",values="accuracy")
+          cc=[]
+          for m in [c for c in q.columns if c!="cnn"]:
+              dif=q[m]-q["cnn"]; t,p=stats.ttest_rel(q[m],q["cnn"])
+              cc.append({"model":m,"mean_diff_vs_cnn":dif.mean(),"wins":int((dif>0).sum()),"losses":int((dif<0).sum()),"paired_t":t,"paired_p":p})
+          pd.DataFrame(cc).to_csv("all_results/comparisons.csv",index=False)
+          bc=glob.glob("all_results/bycorr_*.csv")
+          b=pd.concat([pd.read_csv(f) for f in bc],ignore_index=True)
+          b.groupby(["model","split","corruption"]).accuracy.agg(["mean","std","count"]).reset_index().to_csv("all_results/by_corruption.csv",index=False)
+          print(s.to_string(index=False)); print(pd.DataFrame(cc).to_string(index=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cifar10-rt-modulation-screen-summary
+          path: |
+            all_results/all_screen.csv
+            all_results/summary.csv
+            all_results/comparisons.csv
+            all_results/by_corruption.csv
+          retention-days: 30
