@@ -1,0 +1,64 @@
+name: cifar10-context-permutation-screen
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "experiments/cifar10_context_permutation.py"
+      - ".github/workflows/cifar10_context_permutation.yml"
+jobs:
+  experiment:
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [0,1,2,3,4]
+        model: [cond_head,dense_film,softmoe,rt_adapter]
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install numpy pandas scipy torch torchvision
+      - run: python experiments/cifar10_context_permutation.py --seed ${{ matrix.seed }} --model ${{ matrix.model }} --out results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ctxperm-${{ matrix.model }}-${{ matrix.seed }}
+          path: results/*
+          retention-days: 30
+  aggregate:
+    needs: experiment
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {pattern: "ctxperm-*", path: all, merge-multiple: true}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install pandas scipy
+      - run: |
+          python - <<'PY'
+          import glob,pandas as pd
+          from scipy import stats
+          fs=[f for f in glob.glob("all/*.csv") if "byctx_" not in f]
+          d=pd.concat([pd.read_csv(f) for f in fs],ignore_index=True)
+          s=d.groupby("model").agg(acc=("accuracy","mean"),sd=("accuracy","std"),nll=("nll","mean"),params=("params","first"),width=("width","first")).reset_index()
+          q=d.pivot(index="seed",columns="model",values="accuracy")
+          rows=[]
+          for b in ["cond_head","dense_film","softmoe"]:
+              z=q["rt_adapter"]-q[b]; t,p=stats.ttest_rel(q["rt_adapter"],q[b])
+              rows.append(["rt_adapter",b,z.mean(),int((z>0).sum()),int((z<0).sum()),t,p])
+          s.to_csv("all/summary.csv",index=False); d.to_csv("all/all.csv",index=False)
+          pd.DataFrame(rows,columns=["a","b","diff","wins","losses","t","p"]).to_csv("all/pairs.csv",index=False)
+          bc=pd.concat([pd.read_csv(f) for f in glob.glob("all/byctx_*.csv")],ignore_index=True)
+          bc.groupby(["model","context"]).accuracy.agg(["mean","std"]).reset_index().to_csv("all/byctx.csv",index=False)
+          print(s.to_string(index=False)); print(pd.DataFrame(rows).to_string(index=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: context-permutation-summary
+          path: |
+            all/summary.csv
+            all/all.csv
+            all/pairs.csv
+            all/byctx.csv
