@@ -1,0 +1,24 @@
+name: cifar10-rt-adapter-pruning-controls-screen
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "reproducibility/cifar10_rt_adapter_pruning_controls.py"
+      - ".github/workflows/cifar10_rt_adapter_pruning_controls_screen.yml"
+jobs:
+  experiment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy pandas scipy torch torchvision
+      - run: python reproducibility/cifar10_rt_adapter_pruning_controls.py --seed 0 --out results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pruning-controls-screen-0
+          path: results/*
+          retention-days: 30
