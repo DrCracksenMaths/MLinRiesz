@@ -1,0 +1,27 @@
+name: cifar10-context-final-20
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cifar10_context_final20.yml"
+jobs:
+  experiment:
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+        model: [cond_head,softmoe,rt_adapter]
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install numpy pandas scipy torch torchvision
+      - run: python experiments/cifar10_context_permutation.py --seed ${{ matrix.seed }} --model ${{ matrix.model }} --out results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ctxfinal-${{ matrix.model }}-${{ matrix.seed }}
+          path: results/*
+          retention-days: 30
