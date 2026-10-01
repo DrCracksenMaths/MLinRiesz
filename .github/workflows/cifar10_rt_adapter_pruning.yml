@@ -1,0 +1,27 @@
+name: cifar10-rt-adapter-path-pruning
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "experiments/cifar10_rt_adapter_pruning.py"
+      - ".github/workflows/cifar10_rt_adapter_pruning.yml"
+jobs:
+  experiment:
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [0,1,2,3,4]
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install numpy pandas torch torchvision
+      - run: python experiments/cifar10_rt_adapter_pruning.py --seed ${{ matrix.seed }} --out results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: path-pruning-${{ matrix.seed }}
+          path: results/*
+          retention-days: 30
