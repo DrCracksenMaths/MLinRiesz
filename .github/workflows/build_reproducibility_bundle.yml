@@ -1,0 +1,28 @@
+name: build-reproducibility-source-bundle
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build_reproducibility_bundle.yml"
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build source bundle
+        run: |
+          mkdir -p bundle/experiments bundle/workflows
+          cp -r experiments/*.py bundle/experiments/
+          cp -r .github/workflows/*.yml bundle/workflows/
+          printf '%s\n' \
+            'Source bundle generated from DrCracksenMaths/MLinRiesz.' \
+            'Contains all numerical experiment scripts and GitHub Actions workflows.' \
+            > bundle/SOURCE_MANIFEST.txt
+          cd bundle
+          zip -r ../MLinRiesz_source_bundle.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MLinRiesz-source-bundle
+          path: MLinRiesz_source_bundle.zip
+          retention-days: 30
